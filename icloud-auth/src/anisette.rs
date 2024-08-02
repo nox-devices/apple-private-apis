@@ -13,7 +13,9 @@ impl AnisetteData {
     /// Fetches the data at an anisette server
     pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
         let mut b = AnisetteHeaders::get_anisette_headers_provider(config.clone())?;
-        let base_headers = b.provider.get_authentication_headers().await?;
+        let mut base_headers = b.provider.get_authentication_headers().await?;
+
+        base_headers.extend(config.extra_headers.clone());
 
         Ok(AnisetteData { base_headers, generated_at: SystemTime::now(), config })
     }
@@ -35,37 +37,14 @@ impl AnisetteData {
     pub fn generate_headers(
         &self,
         cpd: bool,
-        client_info: bool,
-        app_info: bool,
+        twofa: bool,
     ) -> HashMap<String, String> {
         if !self.is_valid() {
             panic!("Invalid data!")
         }
         let mut headers = self.base_headers.clone();
-        let old_client_info = headers.remove("X-Mme-Client-Info");
-        if client_info {
-            let client_info = match old_client_info {
-                Some(v) => {
-                    let temp = v.as_str();
-
-                    temp.replace(
-                        temp.split('<').nth(3).unwrap().split('>').nth(0).unwrap(),
-                        "com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)",
-                    )
-                }
-                None => {
-                    return headers;
-                }
-            };
-            headers.insert("X-Mme-Client-Info".to_owned(), client_info.to_owned());
-        }
-
-        if app_info {
-            headers.insert(
-                "X-Apple-App-Info".to_owned(),
-                "com.apple.gs.xcode.auth".to_owned(),
-            );
-            headers.insert("X-Xcode-Version".to_owned(), "11.2 (11B41)".to_owned());
+        if twofa {
+            headers.extend(self.config.extra_2fa_headers.clone());
         }
 
         if cpd {
@@ -80,9 +59,9 @@ impl AnisetteData {
         headers
     }
 
-    pub fn to_plist(&self, cpd: bool, client_info: bool, app_info: bool) -> plist::Dictionary {
+    pub fn to_plist(&self, cpd: bool) -> plist::Dictionary {
         let mut plist = plist::Dictionary::new();
-        for (key, value) in self.generate_headers(cpd, client_info, app_info).iter() {
+        for (key, value) in self.generate_headers(cpd, false).iter() {
             plist.insert(key.to_owned(), plist::Value::String(value.to_owned()));
         }
 
@@ -91,7 +70,7 @@ impl AnisetteData {
 
     pub fn get_header(&self, header: &str) -> Result<String, Error> {
         let headers = self
-            .generate_headers(true, true, true)
+            .generate_headers(true, false)
             .iter()
             .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
             .collect::<HashMap<String, String>>();

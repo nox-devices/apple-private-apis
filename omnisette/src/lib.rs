@@ -71,6 +71,8 @@ pub struct AnisetteConfiguration {
     anisette_url_v3: String,
     configuration_path: PathBuf,
     macos_serial: String,
+    pub extra_headers: Vec<(String, String)>,
+    pub extra_2fa_headers: Vec<(String, String)>,
 }
 
 impl Default for AnisetteConfiguration {
@@ -85,7 +87,9 @@ impl AnisetteConfiguration {
             anisette_url: DEFAULT_ANISETTE_URL.to_string(),
             anisette_url_v3: DEFAULT_ANISETTE_URL_V3.to_string(),
             configuration_path: PathBuf::new(),
-            macos_serial: "0".to_string()
+            macos_serial: "0".to_string(),
+            extra_2fa_headers: vec![],
+            extra_headers: vec![],
         }
     }
 

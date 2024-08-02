@@ -252,7 +252,7 @@ impl AppleAccount {
             version: "1.0.1".to_string(),
         };
         let body = AuthTokenRequestBody {
-            cpd: valid_anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true),
             app: vec![app_name.to_string()],
             c: plist::Value::Data(c.to_vec()),
             operation: "apptokens".to_owned(),
@@ -400,7 +400,7 @@ impl AppleAccount {
         };
         let body = InitRequestBody {
             a_pub: plist::Value::Data(a_pub),
-            cpd: valid_anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true),
             operation: "init".to_string(),
             ps: vec!["s2k".to_string(), "s2k_fo".to_string()],
             username: username.to_string(),
@@ -457,7 +457,7 @@ impl AppleAccount {
         let body = ChallengeRequestBody {
             m: plist::Value::Data(m.to_vec()),
             c: c.to_string(),
-            cpd: valid_anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true),
             operation: "complete".to_string(),
             username: username.to_string(),
         };
@@ -558,6 +558,7 @@ impl AppleAccount {
             .client
             .put("https://gsa.apple.com/auth/verify/phone/")
             .headers(headers.await)
+            .header("Accept", "application/json")
             .json(&body)
             .send().await?;
 
@@ -660,7 +661,7 @@ impl AppleAccount {
 
         let mut headers = HeaderMap::new();
         valid_anisette
-            .generate_headers(false, true, true)
+            .generate_headers(false, true)
             .iter()
             .for_each(|(k, v)| {
                 headers.append(
