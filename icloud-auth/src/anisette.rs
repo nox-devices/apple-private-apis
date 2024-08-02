@@ -15,6 +15,8 @@ impl AnisetteData {
         let mut b = AnisetteHeaders::get_anisette_headers_provider(config.clone())?;
         let mut base_headers = b.provider.get_authentication_headers().await?;
 
+        base_headers.remove("X-MMe-Client-Info");
+
         base_headers.extend(config.extra_headers.clone());
 
         Ok(AnisetteData { base_headers, generated_at: SystemTime::now(), config })
@@ -44,6 +46,7 @@ impl AnisetteData {
         }
         let mut headers = self.base_headers.clone();
         if twofa {
+            headers.remove("X-MMe-Client-Info");
             headers.extend(self.config.extra_2fa_headers.clone());
         }
 

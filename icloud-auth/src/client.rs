@@ -186,6 +186,7 @@ impl AppleAccount {
 
     pub fn new_with_anisette(anisette: AnisetteData) -> Result<Self, crate::Error> {
         let client = ClientBuilder::new()
+            .cookie_store(true)
             .add_root_certificate(Certificate::from_der(APPLE_ROOT)?)
             .http1_title_case_headers()
             .connection_verbose(true)
@@ -247,6 +248,7 @@ impl AppleAccount {
             "X-MMe-Client-Info",
             HeaderValue::from_str(&valid_anisette.get_header("x-mme-client-info")?).unwrap(),
         );
+        gsa_headers.extend(valid_anisette.config.extra_headers.iter().map(|(a, b)| (HeaderName::from_str(&a).unwrap(), HeaderValue::from_str(&b).unwrap())));
 
         let header = RequestHeader {
             version: "1.0.1".to_string(),
@@ -394,6 +396,7 @@ impl AppleAccount {
             "X-MMe-Client-Info",
             HeaderValue::from_str(&valid_anisette.get_header("x-mme-client-info")?).unwrap(),
         );
+        gsa_headers.extend(valid_anisette.config.extra_headers.iter().map(|(a, b)| (HeaderName::from_str(&a).unwrap(), HeaderValue::from_str(&b).unwrap())));
 
         let header = RequestHeader {
             version: "1.0.1".to_string(),
