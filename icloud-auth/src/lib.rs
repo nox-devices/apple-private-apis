@@ -3,7 +3,7 @@ mod client;
 use std::fmt::Display;
 
 pub use client::{AppleAccount, LoginState, TrustedPhoneNumber, AuthenticationExtras, VerifyBody};
-pub use omnisette::AnisetteConfiguration;
+pub use omnisette::{AnisetteConfiguration, LoginClientInfo};
 
 use thiserror::Error;
 #[derive(Debug, Error)]

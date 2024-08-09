@@ -6,6 +6,7 @@
 
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use adi_proxy::ADIError;
@@ -65,14 +66,25 @@ pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
 pub const DEFAULT_ANISETTE_URL_V3: &str = "https://ani.sidestore.io";
 
+#[derive(Clone, Debug, Default)]
+pub struct LoginClientInfo {
+    pub ak_context_type: String,
+    pub client_app_name: String,
+    pub client_bundle_id: String,
+    pub mme_client_info: String,
+    pub mme_client_info_akd: String,
+    pub akd_user_agent: String,
+    pub browser_user_agent: String,
+    pub hardware_headers: HashMap<String, String>,
+    pub push_token: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AnisetteConfiguration {
     anisette_url: String,
     anisette_url_v3: String,
     configuration_path: PathBuf,
-    macos_serial: String,
-    pub extra_headers: Vec<(String, String)>,
-    pub extra_2fa_headers: Vec<(String, String)>,
+    pub client_info: LoginClientInfo,
 }
 
 impl Default for AnisetteConfiguration {
@@ -87,9 +99,7 @@ impl AnisetteConfiguration {
             anisette_url: DEFAULT_ANISETTE_URL.to_string(),
             anisette_url_v3: DEFAULT_ANISETTE_URL_V3.to_string(),
             configuration_path: PathBuf::new(),
-            macos_serial: "0".to_string(),
-            extra_2fa_headers: vec![],
-            extra_headers: vec![],
+            client_info: LoginClientInfo::default(),
         }
     }
 
@@ -106,13 +116,13 @@ impl AnisetteConfiguration {
         self
     }
 
-    pub fn set_macos_serial(mut self, macos_serial: String) -> AnisetteConfiguration {
-        self.macos_serial = macos_serial;
+    pub fn set_configuration_path(mut self, configuration_path: PathBuf) -> AnisetteConfiguration {
+        self.configuration_path = configuration_path;
         self
     }
 
-    pub fn set_configuration_path(mut self, configuration_path: PathBuf) -> AnisetteConfiguration {
-        self.configuration_path = configuration_path;
+    pub fn set_client_info(mut self, client_info: LoginClientInfo) -> AnisetteConfiguration {
+        self.client_info = client_info;
         self
     }
 }
@@ -161,7 +171,7 @@ impl AnisetteHeaders {
 
         #[cfg(feature = "remote-anisette-v3")]
         return Ok(AnisetteHeadersProviderRes::remote(Box::new(
-            remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone(), configuration.macos_serial.clone()),
+            remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone(), configuration.client_info.clone()),
         )));
 
         #[cfg(feature = "remote-anisette")]

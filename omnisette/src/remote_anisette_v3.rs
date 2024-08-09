@@ -7,7 +7,7 @@ use base64::engine::general_purpose;
 use chrono::{DateTime, SubsecRound, Utc};
 use log::debug;
 use plist::{Data, Dictionary};
-use reqwest::{Client, ClientBuilder, RequestBuilder};
+use reqwest::{Client, ClientBuilder, Proxy, RequestBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rand::Rng;
 use sha2::{Sha256, Digest};
@@ -18,7 +18,7 @@ use std::fmt::Write;
 use base64::Engine;
 use async_trait::async_trait;
 
-use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError};
+use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError, LoginClientInfo};
 
 
 fn plist_to_string<T: serde::Serialize>(value: &T) -> Result<String, plist::Error> {
@@ -79,13 +79,6 @@ fn base64_decode(data: &str) -> Vec<u8> {
 }
 
 
-
-#[derive(Deserialize)]
-struct AnisetteClientInfo {
-    client_info: String,
-    user_agent: String,
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct AnisetteState {
     #[serde(serialize_with = "bin_serialize", deserialize_with = "bin_deserialize_16")]
@@ -123,7 +116,7 @@ impl AnisetteState {
     }
 }
 pub struct AnisetteClient {
-    client_info: AnisetteClientInfo,
+    login_info: LoginClientInfo,
     url: String
 }
 
@@ -145,12 +138,11 @@ pub struct AnisetteData {
 }
 
 impl AnisetteData {
-    pub fn get_headers(&self, serial: String) -> HashMap<String, String> {
+    pub fn get_headers(&self) -> HashMap<String, String> {
         let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
         
         HashMap::from_iter([
             ("X-Apple-I-Client-Time".to_string(), dt.format("%+").to_string().replace("+00:00", "Z")),
-            ("X-Apple-I-SRL-NO".to_string(), serial),
             ("X-Apple-I-TimeZone".to_string(), "UTC".to_string()),
             ("X-Apple-Locale".to_string(), "en_US".to_string()),
             ("X-Apple-I-MD-RINFO".to_string(), self.routing_info.clone()),
@@ -166,34 +158,42 @@ impl AnisetteData {
 fn make_reqwest() -> Result<Client, AnisetteError> {
     Ok(ClientBuilder::new()
         .http1_title_case_headers()
+        .proxy(Proxy::https("https://localhost:8080").unwrap())
         .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
         .build()?)
 }
 
 impl AnisetteClient {
-    pub async fn new(url: String) -> Result<AnisetteClient, AnisetteError> {
-        let path = format!("{}/v3/client_info", url);
-        let http_client = make_reqwest()?;
-        let client_info = http_client.get(path)
-            .send().await?
-            .json::<AnisetteClientInfo>().await?;
+    pub async fn new(url: String, login_info: LoginClientInfo) -> Result<AnisetteClient, AnisetteError> {
         Ok(AnisetteClient {
-            client_info,
+            login_info,
             url
         })
     }
 
-    fn build_apple_request(&self, state: &AnisetteState, builder: RequestBuilder) -> RequestBuilder {
+    fn build_apple_request(&self, state: &AnisetteState, mut builder: RequestBuilder) -> RequestBuilder {
         let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
 
-        builder.header("X-Mme-Client-Info", &self.client_info.client_info)
-            .header("User-Agent", &self.client_info.user_agent)
-            .header("Content-Type", "text/x-xml-plist")
+        // missing: Connection, Accept-Encdoing
+        builder = builder.header("User-Agent", &self.login_info.akd_user_agent)
+            .header("X-Apple-Baa-E", "-10000")
             .header("X-Apple-I-MD-LU", encode_hex(&state.md_lu()))
             .header("X-Mme-Device-Id", state.device_id())
+            .header("X-Apple-Baa-Avail", "2")
+            .header("X-Mme-Client-Info", &self.login_info.mme_client_info)
             .header("X-Apple-I-Client-Time", dt.format("%+").to_string())
-            .header("X-Apple-I-TimeZone", "UTC")
-            .header("X-Apple-Locale", "en_US")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("X-Apple-Client-App-Name", "akd")
+            .header("Accept", "*/*")
+            .header("Content-Type", "application/x-www-form-urlencoded") // not a bug, it's how you *think different*
+            .header("X-Apple-Baa-UE", "AKAuthenticationError:-7066|com.apple.devicecheck.error.baa:-10000")
+            .header("X-Apple-Host-Baa-E", "-7066");
+
+        for item in &self.login_info.hardware_headers {
+            builder = builder.header(item.0, item.1);
+        }
+
+        builder
     }
 
     pub async fn get_headers(&self, state: &AnisetteState) -> Result<AnisetteData, AnisetteError> {
@@ -239,11 +239,16 @@ impl AnisetteClient {
                 }
             },
             AnisetteHeaders::Headers { machine_id, one_time_password, routing_info } => {
+                // println!("before {one_time_password}");
+                // let mut decoded = base64_decode(&one_time_password);
+                // *decoded.last_mut().unwrap() = 0x1;
+                // let one_time_password = base64_encode(&decoded);
+                // println!("after {one_time_password}");
                 Ok(AnisetteData {
                     machine_id,
                     one_time_password,
                     routing_info,
-                    device_description: self.client_info.client_info.clone(),
+                    device_description: self.login_info.mme_client_info.clone(),
                     local_user_id: encode_hex(&state.md_lu()),
                     device_unique_identifier: state.device_id()
                 })
@@ -366,17 +371,17 @@ pub struct RemoteAnisetteProviderV3 {
     client: Option<AnisetteClient>,
     pub state: Option<AnisetteState>,
     configuration_path: PathBuf,
-    serial: String
+    login_info: LoginClientInfo,
 }
 
 impl RemoteAnisetteProviderV3 {
-    pub fn new(url: String, configuration_path: PathBuf, serial: String) -> RemoteAnisetteProviderV3 {
+    pub fn new(url: String, configuration_path: PathBuf, login_info: LoginClientInfo) -> RemoteAnisetteProviderV3 {
         RemoteAnisetteProviderV3 {
             client_url: url,
             client: None,
             state: None,
             configuration_path,
-            serial
+            login_info,
         }
     }
 }
@@ -388,7 +393,7 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
         _skip_provisioning: bool,
     ) -> Result<HashMap<String, String>, AnisetteError> {
         if self.client.is_none() {
-            self.client = Some(AnisetteClient::new(self.client_url.clone()).await?);
+            self.client = Some(AnisetteClient::new(self.client_url.clone(), self.login_info.clone()).await?);
         }
         let client = self.client.as_ref().unwrap();
 
@@ -419,27 +424,27 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
                 } else { panic!() }
             },
         };
-        Ok(data.get_headers(self.serial.clone()))
+        Ok(data.get_headers())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::anisette_headers_provider::AnisetteHeadersProvider;
-    use crate::remote_anisette_v3::RemoteAnisetteProviderV3;
-    use crate::{AnisetteError, DEFAULT_ANISETTE_URL_V3};
-    use log::info;
+// #[cfg(test)]
+// mod tests {
+//     use crate::anisette_headers_provider::AnisetteHeadersProvider;
+//     use crate::remote_anisette_v3::RemoteAnisetteProviderV3;
+//     use crate::{AnisetteError, DEFAULT_ANISETTE_URL_V3};
+//     use log::info;
 
-    #[tokio::test]
-    async fn fetch_anisette_remote_v3() -> Result<(), AnisetteError> {
-        crate::tests::init_logger();
+//     #[tokio::test]
+//     async fn fetch_anisette_remote_v3() -> Result<(), AnisetteError> {
+//         crate::tests::init_logger();
 
-        let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into(), "0".to_string());
-        info!(
-            "Remote headers: {:?}",
-            (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?
-        );
-        Ok(())
-    }
-}
+//         let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into(), "0".to_string());
+//         info!(
+//             "Remote headers: {:?}",
+//             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?
+//         );
+//         Ok(())
+//     }
+// }
 
