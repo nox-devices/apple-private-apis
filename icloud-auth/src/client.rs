@@ -193,8 +193,8 @@ impl AppleAccount {
         let client = ClientBuilder::new()
             .cookie_store(true)
             .add_root_certificate(Certificate::from_der(APPLE_ROOT)?)
-            .proxy(Proxy::https("https://localhost:8080").unwrap())
-            .danger_accept_invalid_certs(true)
+            // .proxy(Proxy::https("https://localhost:8080").unwrap())
+            // .danger_accept_invalid_certs(true)
             .http1_title_case_headers()
             .connection_verbose(true)
             .build()?;

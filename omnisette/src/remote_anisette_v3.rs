@@ -7,7 +7,7 @@ use base64::engine::general_purpose;
 use chrono::{DateTime, SubsecRound, Utc};
 use log::debug;
 use plist::{Data, Dictionary};
-use reqwest::{Client, ClientBuilder, Proxy, RequestBuilder};
+use reqwest::{Certificate, Client, ClientBuilder, Proxy, RequestBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rand::Rng;
 use sha2::{Sha256, Digest};
@@ -20,6 +20,7 @@ use async_trait::async_trait;
 
 use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError, LoginClientInfo};
 
+const APPLE_ROOT: &[u8] = include_bytes!("../../icloud-auth/src/apple_root.der");
 
 fn plist_to_string<T: serde::Serialize>(value: &T) -> Result<String, plist::Error> {
     plist_to_buf(value).map(|val| String::from_utf8(val).unwrap())
@@ -158,8 +159,9 @@ impl AnisetteData {
 fn make_reqwest() -> Result<Client, AnisetteError> {
     Ok(ClientBuilder::new()
         .http1_title_case_headers()
-        .proxy(Proxy::https("https://localhost:8080").unwrap())
-        .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
+        .add_root_certificate(Certificate::from_der(APPLE_ROOT)?)
+        // .proxy(Proxy::https("https://localhost:8080").unwrap())
+        // .danger_accept_invalid_certs(true)
         .build()?)
 }
 
