@@ -157,10 +157,10 @@ impl AnisetteHeaders {
     pub fn get_anisette_headers_provider(
         configuration: AnisetteConfiguration,
     ) -> Result<AnisetteHeadersProviderRes, AnisetteError> {
-        #[cfg(target_os = "macos")]
-        if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
-            return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
-        }
+        // #[cfg(target_os = "macos")]
+        // if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
+        //     return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
+        // }
 
         // TODO: handle Err because it will just go to remote anisette and not tell the user anything
         if let Ok(ssc_anisette_headers_provider) =
