@@ -19,8 +19,8 @@ pub mod store_services_core;
 #[cfg(feature = "remote-anisette-v3")]
 pub mod remote_anisette_v3;
 
-#[cfg(target_os = "macos")]
-pub mod aos_kit;
+// #[cfg(target_os = "macos")]
+// pub mod aos_kit;
 
 #[cfg(feature = "remote-anisette")]
 pub mod remote_anisette;
