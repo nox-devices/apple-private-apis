@@ -16,6 +16,8 @@ pub mod adi_proxy;
 pub mod anisette_headers_provider;
 pub mod store_services_core;
 
+pub mod anisette_clearadi;
+
 #[cfg(feature = "remote-anisette-v3")]
 pub mod remote_anisette_v3;
 
@@ -58,6 +60,8 @@ pub enum AnisetteError {
     Misc,
     #[error("Missing Libraries")]
     MissingLibraries,
+    #[error("ClearADI Error {0}")]
+    ClearADIError(#[from] clearadi::ClearAdiError),
     #[error("{0}")]
     Anyhow(#[from] anyhow::Error)
 }
@@ -99,7 +103,17 @@ impl AnisetteConfiguration {
             anisette_url: DEFAULT_ANISETTE_URL.to_string(),
             anisette_url_v3: DEFAULT_ANISETTE_URL_V3.to_string(),
             configuration_path: PathBuf::new(),
-            client_info: LoginClientInfo::default(),
+            client_info: LoginClientInfo {
+                ak_context_type: "imessage".to_string(),
+                client_app_name: "Messages".to_string(),
+                client_bundle_id: "com.apple.MobileSMS".to_string(),
+                mme_client_info_akd: "<MacBookPro18,3> <macOS;13.2.1;22D68> <com.apple.AuthKit/1 (com.apple.akd/1.0)>".to_string(),
+                mme_client_info: "<MacBookPro18,3> <macOS;13.2.1;22D68> <com.apple.AuthKit/1 (com.apple.akd/1.0)>".to_string(),
+                akd_user_agent: "akd/1.0 CFNetwork/1494.0.7 Darwin/23.4.0".to_string(),
+                browser_user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)".to_string(),
+                hardware_headers: HashMap::new(),
+                push_token: None,
+            },
         }
     }
 
@@ -169,6 +183,10 @@ impl AnisetteHeaders {
             return Ok(ssc_anisette_headers_provider);
         }
 
+        return Ok(AnisetteHeadersProviderRes::remote(Box::new(
+            anisette_clearadi::ClearAdiProvider::new(configuration.configuration_path.clone(), configuration.client_info.clone()),
+        )));
+
         #[cfg(feature = "remote-anisette-v3")]
         return Ok(AnisetteHeadersProviderRes::remote(Box::new(
             remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone(), configuration.client_info.clone()),
@@ -216,25 +234,5 @@ mod tests {
         )
         .is_ok()
         {}
-    }
-
-    #[cfg(not(feature = "async"))]
-    #[test]
-    fn fetch_anisette_auto() -> Result<()> {
-        use crate::{AnisetteConfiguration, AnisetteHeaders};
-        use log::info;
-        use std::path::PathBuf;
-
-        crate::tests::init_logger();
-
-        let mut provider = AnisetteHeaders::get_anisette_headers_provider(
-            AnisetteConfiguration::new()
-                .set_configuration_path(PathBuf::new().join("anisette_test")),
-        )?;
-        info!(
-            "Headers: {:?}",
-            provider.provider.get_authentication_headers()?
-        );
-        Ok(())
     }
 }

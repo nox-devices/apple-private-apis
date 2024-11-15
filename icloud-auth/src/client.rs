@@ -124,12 +124,14 @@ struct VerifyCode {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[repr(C)]
 struct PhoneNumber {
     id: u32
 }
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+#[repr(C)]
 pub struct VerifyBody {
     phone_number: PhoneNumber,
     mode: String,
