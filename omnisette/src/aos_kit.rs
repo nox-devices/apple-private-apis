@@ -7,6 +7,8 @@ use objc_foundation::{INSString, NSObject, NSString};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::AnisetteError;
+
 pub struct AOSKitAnisetteProvider<'lt> {
     aos_utilities: &'lt Class,
     ak_device: &'lt Class,
@@ -23,13 +25,14 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+//#[async_trait::async_trait(?Send)]
+//#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+#[async_trait::async_trait]
 impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn get_anisette_headers(
         &mut self,
         _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>> {
+    ) -> Result<HashMap<String, String>, AnisetteError> {  // Changed return type
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {

@@ -11,10 +11,12 @@ use std::io;
 use std::path::PathBuf;
 use adi_proxy::ADIError;
 use thiserror::Error;
+use aos_kit::AOSKitAnisetteProvider;
 
 pub mod adi_proxy;
 pub mod anisette_headers_provider;
 pub mod store_services_core;
+pub mod aos_kit;
 
 pub mod anisette_clearadi;
 
@@ -172,9 +174,9 @@ impl AnisetteHeaders {
         configuration: AnisetteConfiguration,
     ) -> Result<AnisetteHeadersProviderRes, AnisetteError> {
         // #[cfg(target_os = "macos")]
-        // if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
-        //     return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
-        // }
+        if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
+            return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
+        }
 
         // TODO: handle Err because it will just go to remote anisette and not tell the user anything
         if let Ok(ssc_anisette_headers_provider) =

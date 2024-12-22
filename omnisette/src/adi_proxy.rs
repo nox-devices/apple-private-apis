@@ -57,13 +57,13 @@ impl ADIError {
 
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 trait ToPlist {
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+   // #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn plist(self) -> Result<Dictionary, ADIError>;
 }
 
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 impl ToPlist for Response {
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+   // #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn plist(self) -> Result<Dictionary, ADIError> {
         if let Ok(property_list) = Value::from_reader_xml(&*self.bytes().await?) {
             Ok(property_list.as_dictionary().unwrap().to_owned())
@@ -94,7 +94,7 @@ pub struct RequestOTPData {
     pub mid: Vec<u8>,
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+//#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 pub trait ADIProxy: Send + Sync {   
     fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError>;
     fn synchronize(&mut self, ds_id: i64, sim: &[u8]) -> Result<SynchronizeData, ADIError>;
@@ -194,7 +194,7 @@ impl dyn ADIProxy {
         Ok(http_client)
     }
 
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+    //#[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn provision_device(&mut self) -> Result<(), ADIError> {
         let client = self.make_http_client()?;
 
@@ -332,11 +332,12 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait)]
+#[async_trait::async_trait]
+//#[cfg_attr(feature = "async", async_trait::async_trait)]
 impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
     for ADIProxyAnisetteProvider<ProxyType>
 {
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+   // #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn get_anisette_headers(
         &mut self,
         skip_provisioning: bool,
