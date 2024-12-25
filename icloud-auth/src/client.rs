@@ -1,11 +1,11 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 // use crate::anisette::AnisetteData;
 use crate::{anisette::AnisetteData, Error};
 use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
-use omnisette::AnisetteConfiguration;
+use omnisette::{AnisetteClient, AnisetteProvider, ArcAnisetteClient, LoginClientInfo};
 use plist::Value;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue}, Certificate, Client, ClientBuilder, Proxy, Response
@@ -87,9 +87,10 @@ pub struct AuthTokenRequest {
     request: AuthTokenRequestBody,
 }
 
-pub struct AppleAccount {
+pub struct AppleAccount<T: AnisetteProvider> {
     //TODO: move this to omnisette
-    pub anisette: Mutex<AnisetteData>,
+    pub anisette: ArcAnisetteClient<T>,
+    pub client_info: LoginClientInfo,
     // pub spd:  Option<plist::Dictionary>,
     //mutable spd
     pub spd: Option<plist::Dictionary>,
@@ -185,13 +186,9 @@ async fn parse_response(res: Result<Response, reqwest::Error>) -> Result<plist::
     }
 }
 
-impl AppleAccount {
-    pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
-        let anisette = AnisetteData::new(config).await?;
-        Ok(Self::new_with_anisette(anisette)?)
-    }
+impl<T: AnisetteProvider> AppleAccount<T> {
 
-    pub fn new_with_anisette(anisette: AnisetteData) -> Result<Self, crate::Error> {
+    pub fn new_with_anisette(client_info: LoginClientInfo, anisette:  ArcAnisetteClient<T>) -> Result<Self, crate::Error> {
         let client = ClientBuilder::new()
             .cookie_store(true)
             .add_root_certificate(Certificate::from_der(APPLE_ROOT)?)
@@ -203,7 +200,8 @@ impl AppleAccount {
 
         Ok(AppleAccount {
             client,
-            anisette: Mutex::new(anisette),
+            anisette,
+            client_info,
             spd: None,
             pet: None,
             username: None,
@@ -213,18 +211,15 @@ impl AppleAccount {
     pub async fn login(
         appleid_closure: impl Fn() -> (String, String),
         tfa_closure: impl Fn() -> String,
-        config: AnisetteConfiguration,
-    ) -> Result<AppleAccount, Error> {
-        let anisette = AnisetteData::new(config).await?;
-        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette).await
+        client_info: LoginClientInfo,
+        anisette: ArcAnisetteClient<T>
+    ) -> Result<AppleAccount<T>, Error> {
+        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, client_info, anisette).await
     }
 
-    pub async fn get_anisette(&self) -> AnisetteData {
+    pub async fn get_anisette(&self) -> Result<AnisetteData, crate::Error> {
         let mut locked = self.anisette.lock().await;
-        if locked.needs_refresh() {
-            *locked = locked.refresh().await.unwrap();
-        }
-        locked.clone()
+        Ok(AnisetteData::new(&mut *locked, self.client_info.clone()).await?)
     }
 
     fn create_checksum(session_key: &Vec<u8>, dsid: &str, app_name: &str) -> Vec<u8> {
@@ -261,9 +256,10 @@ impl AppleAccount {
     pub async fn login_with_anisette<F: Fn() -> (String, String), G: Fn() -> String>(
         appleid_closure: F,
         tfa_closure: G,
-        anisette: AnisetteData,
-    ) -> Result<AppleAccount, Error> {
-        let mut _self = AppleAccount::new_with_anisette(anisette)?;
+        client_info: LoginClientInfo,
+        anisette: ArcAnisetteClient<T>
+    ) -> Result<AppleAccount<T>, Error> {
+        let mut _self = AppleAccount::new_with_anisette(client_info, anisette)?;
         let (username, password) = appleid_closure();
         let mut response = _self.login_email_pass(&username, &password).await?;
         loop {
@@ -316,7 +312,7 @@ impl AppleAccount {
 
         self.username = Some(username.to_string());
 
-        let valid_anisette = self.get_anisette().await;
+        let valid_anisette = self.get_anisette().await?;
 
         let mut gsa_headers = HeaderMap::new();
         gsa_headers.insert(
@@ -471,7 +467,7 @@ impl AppleAccount {
         let res = self
             .client
             .get("https://gsa.apple.com/auth/verify/trusteddevice")
-            .headers(headers.await)
+            .headers(headers.await?)
             .send().await?;
 
         if !res.status().is_success() {
@@ -496,7 +492,7 @@ impl AppleAccount {
         let res = self
             .client
             .put("https://gsa.apple.com/auth/verify/phone/")
-            .headers(headers.await)
+            .headers(headers.await?)
             .header("Accept", "application/json")
             .json(&body)
             .send().await?;
@@ -513,7 +509,7 @@ impl AppleAccount {
 
         let req = self.client
             .get("https://gsa.apple.com/auth")
-            .headers(headers.await)
+            .headers(headers.await?)
             .header("Accept", "application/json")
             .send().await?;
         let status = req.status().as_u16();
@@ -537,7 +533,7 @@ impl AppleAccount {
         let res = self
             .client
             .get("https://gsa.apple.com/grandslam/GsService2/validate")
-            .headers(headers.await)
+            .headers(headers.await?)
             .header(
                 HeaderName::from_str("security-code").unwrap(),
                 HeaderValue::from_str(&code).unwrap(),
@@ -560,7 +556,7 @@ impl AppleAccount {
     }
 
     pub async fn verify_sms_2fa(&mut self, code: String, mut body: VerifyBody) -> Result<LoginState, Error> {
-        let headers = self.build_2fa_headers(true).await;
+        let headers = self.build_2fa_headers(true).await?;
         // println!("Recieved code: {}", code);
 
         body.security_code = Some(VerifyCode { code });
@@ -608,14 +604,14 @@ impl AppleAccount {
 
     // pub async 
 
-    pub async fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
+    pub async fn build_2fa_headers(&self, sms: bool) -> Result<HeaderMap, crate::Error> {
         let spd = self.spd.as_ref().unwrap();
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
         let token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
 
         let identity_token = base64::encode(format!("{}:{}", dsid, token));
 
-        let valid_anisette = self.get_anisette().await;
+        let valid_anisette = self.get_anisette().await?;
 
         let mut headers = HeaderMap::new();
         valid_anisette
@@ -642,6 +638,6 @@ impl AppleAccount {
         );
 
 
-        headers
+        Ok(headers)
     }
 }

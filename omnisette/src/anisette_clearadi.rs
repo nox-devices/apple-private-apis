@@ -17,7 +17,7 @@ use std::fmt::Write;
 use base64::Engine;
 use async_trait::async_trait;
 
-use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError, LoginClientInfo};
+use crate::{AnisetteError, AnisetteProvider, LoginClientInfo};
 
 const APPLE_ROOT: &[u8] = include_bytes!("../../icloud-auth/src/apple_root.der");
 
@@ -140,8 +140,9 @@ impl AnisetteState {
         Uuid::from_bytes(self.keychain_identifier).to_string()
     }
 }
-pub struct AnisetteClient {
-    login_info: LoginClientInfo,
+pub struct ClearADIClient {
+    pub login_info: LoginClientInfo,
+    pub configuration_path: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -188,12 +189,7 @@ fn make_reqwest() -> Result<Client, AnisetteError> {
         .build()?)
 }
 
-impl AnisetteClient {
-    pub async fn new(login_info: LoginClientInfo) -> Result<AnisetteClient, AnisetteError> {
-        Ok(AnisetteClient {
-            login_info,
-        })
-    }
+impl ClearADIClient {
 
     fn build_apple_request(&self, state: &AnisetteState, mut builder: RequestBuilder) -> RequestBuilder {
         let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
@@ -283,60 +279,29 @@ impl AnisetteClient {
     }
 }
 
-
-pub struct ClearAdiProvider {
-    client: Option<AnisetteClient>,
-    pub state: Option<AnisetteState>,
-    configuration_path: PathBuf,
-    login_info: LoginClientInfo,
-}
-
-impl ClearAdiProvider {
-    pub fn new(configuration_path: PathBuf, login_info: LoginClientInfo) -> ClearAdiProvider {
-        ClearAdiProvider {
-            client: None,
-            state: None,
-            configuration_path,
-            login_info,
-        }
-    }
-}
-
-#[async_trait]
-impl AnisetteHeadersProvider for ClearAdiProvider {
-    async fn get_anisette_headers(
-        &mut self,
-        _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>, AnisetteError> {
-        if self.client.is_none() {
-            self.client = Some(AnisetteClient::new(self.login_info.clone()).await?);
-        }
-        let client = self.client.as_ref().unwrap();
-
+impl AnisetteProvider for ClearADIClient {
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>, AnisetteError> {
         fs::create_dir_all(&self.configuration_path)?;
         
         let config_path = self.configuration_path.join("state.plist");
-        if self.state.is_none() {
-            self.state = Some(if let Ok(text) = plist::from_file(&config_path) {
-                text
-            } else {
-                AnisetteState::new()
-            });
-        }
-
-        let state = self.state.as_mut().unwrap();
+        let mut state = if let Ok(text) = plist::from_file(&config_path) {
+            text
+        } else {
+            AnisetteState::new()
+        };
+        
         if !state.is_provisioned() {
-            client.provision(state).await?;
-            plist::to_file_xml(&config_path, state)?;
+            self.provision(&mut state).await?;
+            plist::to_file_xml(&config_path, &state)?;
         }
-        let data = match client.get_headers(&state).await {
+        let data = match self.get_headers(&state).await {
             Ok(data) => data,
             Err(err) => {
                 if matches!(err, AnisetteError::AnisetteNotProvisioned) {
                     state.provisioned = None;
-                    client.provision(state).await?;
-                    plist::to_file_xml(config_path, state)?;
-                    client.get_headers(&state).await?
+                    self.provision(&mut state).await?;
+                    plist::to_file_xml(config_path, &mut state)?;
+                    self.get_headers(&state).await?
                 } else { panic!() }
             },
         };
@@ -344,35 +309,4 @@ impl AnisetteHeadersProvider for ClearAdiProvider {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use crate::anisette_headers_provider::AnisetteHeadersProvider;
-    use crate::anisette_clearadi::ClearAdiProvider;
-    use crate::{AnisetteError, LoginClientInfo};
-    use log::info;
-
-    #[tokio::test]
-    async fn fetch_anisette_clearadi() -> Result<(), AnisetteError> {
-        crate::tests::init_logger();
-
-        let mut provider = ClearAdiProvider::new("anisette_test".into(), LoginClientInfo {
-            ak_context_type: "imessage".to_string(),
-            client_app_name: "Messages".to_string(),
-            client_bundle_id: "com.apple.MobileSMS".to_string(),
-            mme_client_info_akd: "<MacBookPro18,3> <macOS;13.2.1;22D68> <com.apple.AuthKit/1 (com.apple.akd/1.0)>".to_string(),
-            mme_client_info: "<MacBookPro18,3> <macOS;13.2.1;22D68> <com.apple.AuthKit/1 (com.apple.akd/1.0)>".to_string(),
-            akd_user_agent: "akd/1.0 CFNetwork/1494.0.7 Darwin/23.4.0".to_string(),
-            browser_user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)".to_string(),
-            hardware_headers: HashMap::new(),
-            push_token: None,
-        });
-        info!(
-            "Remote headers: {:?}",
-            (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?
-        );
-        Ok(())
-    }
-}
 

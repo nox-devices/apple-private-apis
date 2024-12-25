@@ -1,4 +1,4 @@
-use crate::anisette_headers_provider::AnisetteHeadersProvider;
+
 use anyhow::Result;
 
 use dlopen2::symbor::Library;
@@ -23,9 +23,7 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
-impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
-    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+impl<'lt> AnisetteProvider for AOSKitAnisetteProvider<'lt> {
     async fn get_anisette_headers(
         &mut self,
         _skip_provisioning: bool,

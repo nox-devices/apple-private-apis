@@ -368,61 +368,29 @@ impl AnisetteClient {
 }
 
 
-pub struct RemoteAnisetteProviderV3 {
-    client_url: String,
-    client: Option<AnisetteClient>,
-    pub state: Option<AnisetteState>,
-    configuration_path: PathBuf,
-    login_info: LoginClientInfo,
-}
-
-impl RemoteAnisetteProviderV3 {
-    pub fn new(url: String, configuration_path: PathBuf, login_info: LoginClientInfo) -> RemoteAnisetteProviderV3 {
-        RemoteAnisetteProviderV3 {
-            client_url: url,
-            client: None,
-            state: None,
-            configuration_path,
-            login_info,
-        }
-    }
-}
-
-#[async_trait]
-impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
-    async fn get_anisette_headers(
-        &mut self,
-        _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>, AnisetteError> {
-        if self.client.is_none() {
-            self.client = Some(AnisetteClient::new(self.client_url.clone(), self.login_info.clone()).await?);
-        }
-        let client = self.client.as_ref().unwrap();
-
+impl AnisetteProvider for AnisetteClient {
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>, AnisetteError> {
         fs::create_dir_all(&self.configuration_path)?;
         
         let config_path = self.configuration_path.join("state.plist");
-        if self.state.is_none() {
-            self.state = Some(if let Ok(text) = plist::from_file(&config_path) {
-                text
-            } else {
-                AnisetteState::new()
-            });
-        }
-
-        let state = self.state.as_mut().unwrap();
+        let mut state = if let Ok(text) = plist::from_file(&config_path) {
+            text
+        } else {
+            AnisetteState::new()
+        };
+        
         if !state.is_provisioned() {
-            client.provision(state).await?;
-            plist::to_file_xml(&config_path, state)?;
+            self.provision(&mut state).await?;
+            plist::to_file_xml(&config_path, &state)?;
         }
-        let data = match client.get_headers(&state).await {
+        let data = match self.get_headers(&state).await {
             Ok(data) => data,
             Err(err) => {
                 if matches!(err, AnisetteError::AnisetteNotProvisioned) {
-                    state.adi_pb = None;
-                    client.provision(state).await?;
-                    plist::to_file_xml(config_path, state)?;
-                    client.get_headers(&state).await?
+                    state.provisioned = None;
+                    self.provision(&mut state).await?;
+                    plist::to_file_xml(config_path, &mut state)?;
+                    self.get_headers(&state).await?
                 } else { panic!() }
             },
         };
@@ -430,23 +398,5 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::anisette_headers_provider::AnisetteHeadersProvider;
-//     use crate::remote_anisette_v3::RemoteAnisetteProviderV3;
-//     use crate::{AnisetteError, DEFAULT_ANISETTE_URL_V3};
-//     use log::info;
 
-//     #[tokio::test]
-//     async fn fetch_anisette_remote_v3() -> Result<(), AnisetteError> {
-//         crate::tests::init_logger();
-
-//         let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into(), "0".to_string());
-//         info!(
-//             "Remote headers: {:?}",
-//             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?
-//         );
-//         Ok(())
-//     }
-// }
 
