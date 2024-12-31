@@ -1,5 +1,4 @@
 
-use anyhow::Result;
 
 use dlopen2::symbor::Library;
 use objc::{msg_send, runtime::Class, sel, sel_impl};
@@ -7,13 +6,15 @@ use objc_foundation::{INSString, NSObject, NSString};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+
+use crate::{AnisetteError, AnisetteProvider};
 pub struct AOSKitAnisetteProvider<'lt> {
     aos_utilities: &'lt Class,
     ak_device: &'lt Class,
 }
 
 impl<'lt> AOSKitAnisetteProvider<'lt> {
-    pub fn new() -> Result<AOSKitAnisetteProvider<'lt>> {
+    pub fn new() -> anyhow::Result<AOSKitAnisetteProvider<'lt>> {
         Library::open("/System/Library/PrivateFrameworks/AOSKit.framework/AOSKit")?;
         Library::open("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit")?;
         Ok(AOSKitAnisetteProvider {
@@ -25,9 +26,8 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
 
 impl<'lt> AnisetteProvider for AOSKitAnisetteProvider<'lt> {
     async fn get_anisette_headers(
-        &mut self,
-        _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>> {
+        &mut self
+    ) -> Result<HashMap<String, String>, AnisetteError> {
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {

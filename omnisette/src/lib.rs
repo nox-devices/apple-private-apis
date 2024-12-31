@@ -9,17 +9,20 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+#[cfg(feature = "remote-clearadi")]
 use anisette_clearadi::ClearADIClient;
+use aos_kit::AOSKitAnisetteProvider;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+#[cfg(feature = "remote-clearadi")]
 pub mod anisette_clearadi;
 
 #[cfg(feature = "remote-anisette-v3")]
 pub mod remote_anisette_v3;
 
-// #[cfg(target_os = "macos")]
-// pub mod aos_kit;
+#[cfg(target_os = "macos")]
+pub mod aos_kit;
 
 #[allow(dead_code)]
 pub struct AnisetteHeaders;
@@ -52,6 +55,7 @@ pub enum AnisetteError {
     Misc,
     #[error("Missing Libraries")]
     MissingLibraries,
+    #[cfg(feature = "remote-clearadi")]
     #[error("ClearADI Error {0}")]
     ClearADIError(#[from] clearadi::ClearAdiError),
     #[error("{0}")]
@@ -67,12 +71,22 @@ pub trait AnisetteProvider {
 }
 
 // conditionally compile this
+#[cfg(not(target_os = "macos"))]
 pub type DefaultAnisetteProvider = ClearADIClient;
+#[cfg(not(target_os = "macos"))]
 pub fn default_provider(info: LoginClientInfo, path: PathBuf) -> ArcAnisetteClient<DefaultAnisetteProvider> {
     Arc::new(Mutex::new(AnisetteClient::new(ClearADIClient {
         login_info: info,
         configuration_path: path
     })))
+}
+
+
+#[cfg(target_os = "macos")]
+pub type DefaultAnisetteProvider = AOSKitAnisetteProvider<'static>;
+#[cfg(target_os = "macos")]
+pub fn default_provider(info: LoginClientInfo, path: PathBuf) -> ArcAnisetteClient<DefaultAnisetteProvider> {
+    Arc::new(Mutex::new(AnisetteClient::new(AOSKitAnisetteProvider::new().expect("Failed to load anisette provider?"))))
 }
 
 pub type ArcAnisetteClient<T> = Arc<Mutex<AnisetteClient<T>>>;
