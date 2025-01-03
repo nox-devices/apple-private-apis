@@ -9,17 +9,17 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-#[cfg(feature = "remote-clearadi")]
-use anisette_clearadi::ClearADIClient;
+// #[cfg(feature = "remote-clearadi")]
+// use anisette_clearadi::ClearADIClient;
 use aos_kit::AOSKitAnisetteProvider;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-#[cfg(feature = "remote-clearadi")]
-pub mod anisette_clearadi;
+// #[cfg(feature = "remote-clearadi")]
+// pub mod anisette_clearadi;
 
-#[cfg(feature = "remote-anisette-v3")]
-pub mod remote_anisette_v3;
+// #[cfg(feature = "remote-anisette-v3")]
+// pub mod remote_anisette_v3;
 
 #[cfg(target_os = "macos")]
 pub mod aos_kit;
@@ -67,7 +67,9 @@ pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 pub const DEFAULT_ANISETTE_URL_V3: &str = "https://ani.sidestore.io";
 
 pub trait AnisetteProvider {
-    fn get_anisette_headers(&mut self) -> impl std::future::Future<Output = Result<HashMap<String, String>, AnisetteError>> + Send;
+    fn get_anisette_headers(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<HashMap<String, String>, AnisetteError>> + Send;
 }
 
 // conditionally compile this
